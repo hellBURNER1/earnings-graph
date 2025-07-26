@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Free Money Earnings Tracker</title>
+<style>
+  body {
+    margin: 0;
+    background-color: #121212;
+    color: #8bc34a;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    text-align: center;
+    padding: 1rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    background-color: #1e1e1e;
+    border-bottom: 2px solid #8bc34a;
+  }
+  main {
+    flex: 1;
+    padding: 0.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  canvas {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  footer {
+    text-align: center;
+    font-size: 0.8rem;
+    padding: 0.5rem;
+    background-color: #1e1e1e;
+    border-top: 2px solid #8bc34a;
+  }
+</style>
+</head>
+<body>
+<header>Free Money Earnings Tracker</header>
+<main>
+  <canvas id="earningsChart" aria-label="Earnings over time" role="img"></canvas>
+</main>
+<footer>Data updates every minute from your Google Sheet</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const csvUrl = 'https://docs.google.com/spreadsheets/d/1aVasaCgccrV2K6ADko3pHUAS0Sr6sWZLl_4tr9rWExc/export?format=csv';
+
+  const ctx = document.getElementById('earningsChart').getContext('2d');
+  let chart;
+
+  function parseCSV(csvText) {
+    const lines = csvText.trim().split('\\n');
+    const headers = lines[0].split(',').map(h => h.trim());
+    const data = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i].split(',');
+      const obj = {};
+      headers.forEach((h, idx) => {
+        obj[h] = row[idx] ? row[idx].trim() : '';
+      });
+      data.push(obj);
+    }
+    return data;
+  }
+
+  function formatDateLabel(dateStr) {
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    return d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  }
+
+  async function loadAndUpdateChart() {
+    try {
+      const res = await fetch(csvUrl, {cache: 'no-cache'});
+      if (!res.ok) throw new Error('Failed to fetch CSV');
+      const text = await res.text();
+
+      const rows = parseCSV(text);
+      const filtered = rows.filter(r => r.Date && r.Amount && !isNaN(parseFloat(r.Amount)));
+      filtered.sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+      const labels = filtered.map(r => formatDateLabel(r.Date));
+      const dataPoints = filtered.map(r => parseFloat(r.Amount));
+      const sources = filtered.map(r => r.Source || '');
+
+      const chartData = {
+        labels,
+        datasets: [{
+          label: 'Free Money Earned',
+          data: dataPoints,
+          fill: false,
+          borderColor: '#8bc34a',
+          backgroundColor: '#8bc34a',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          tension: 0.3,
+        }]
+      };
+
+      const config = {
+        type: 'line',
+        data: chartData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: false,
+          },
+          scales: {
+            x: {
+              ticks: { color: '#8bc34a' },
+              grid: { color: '#2a2a2a' },
+              title: {
+                display: true,
+                text: 'Date',
+                color: '#8bc34a',
+                font: { weight: 'bold' }
+              }
+            },
+            y: {
+              ticks: { color: '#8bc34a' },
+              grid: { color: '#2a2a2a' },
+              title: {
+                display: true,
+                text: 'Amount',
+                color: '#8bc34a',
+                font: { weight: 'bold' }
+              },
+              beginAtZero: true,
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#8bc34a', font: { weight: 'bold' } }
+            },
+            tooltip: {
+              backgroundColor: '#222',
+              titleColor: '#8bc34a',
+              bodyColor: '#8bc34a',
+              callbacks: {
+                label: ctx => {
+                  const idx = ctx.dataIndex;
+                  const source = sources[idx];
+                  let label = `Amount: ${ctx.formattedValue}`;
+                  if (source) label += ` (Source: ${source})`;
+                  return label;
+                }
+              }
+            }
+          }
+        },
+      };
+
+      if (chart) {
+        chart.data = chartData;
+        chart.options = config.options;
+        chart.update();
+      } else {
+        chart = new Chart(ctx, config);
+      }
+    } catch (err) {
+      console.error('Error loading or parsing CSV:', err);
+    }
+  }
+
+  loadAndUpdateChart();
+  setInterval(loadAndUpdateChart, 60000);
+</script>
+</body>
+</html>
